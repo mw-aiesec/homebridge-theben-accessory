@@ -127,27 +127,48 @@ HttpAdvancedAccessory.prototype = {
  * @param callback Callback method to call with the result or error (error, response, body)
  */
 	httpRequest : function(url, body, httpMethod, callback) {
+	function tokenRequest() {
+			return new Promise(function(resolve){
+				var options = {
+				'method': 'GET',
+				'url': 'http://localhost/theben_token.json',
+				
+			};
+			 request(options, function (error, response, body) {
+				if (error) throw new Error(error);
+				resolve(body);
+			});
+
+		});
+			}
+
+		tokenRequest().then(function(token) {
+
 		setTimeout(
-			function(){request({
-				url: url,
-				body: body,
-				method: httpMethod,
-				auth: {
-					user: this.auth.username,
-					pass: this.auth.password,
-					sendImmediately: this.auth.immediately
-				},
-				headers: {
-					Authorization: "Basic " + new Buffer(this.auth.username + ":" + this.auth.password).toString("base64")
-				}
-			},
-			function(error, response, body) {
-				this.uriCalls--;
-				this.debugLog("httpRequest ended, current uriCalls is " + this.uriCalls);
-				callback(error, response, body)
-			}.bind(this))}.bind(this), this.uriCalls * this.uriCallsDelay);
-		
+			function(){
+
+				this.debugLog(token)
+			return request({
+			url: url,
+			body: body,
+			method: httpMethod,
+			rejectUnauthorized: false,
+
+			headers: {
+				Authorization: "Token token=" + token //e9e19830951552a80d043cae9f13983f" //secondRequest()
+			}
+		},
+		function(error, response, body) {
+			this.uriCalls--;
+			this.debugLog("httpRequest ended, current uriCalls is " + this.uriCalls);
+			callback(error, response, body)
+		}.bind(this));
+
+				}.bind(this), this.uriCalls * this.uriCallsDelay);
+			}.bind(this)); // close promise
+
 		this.uriCalls++;
+		this.uriCallsDelay=0;
 		this.debugLog("httpRequest called, current uriCalls is " + this.uriCalls); 
 	},
 
