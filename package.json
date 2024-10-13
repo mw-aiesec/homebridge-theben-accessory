@@ -1,6 +1,6 @@
 {
-  "displayName": "HTTP Advanced Accessory",
-  "name": "homebridge-http-advanced-accessory",
+  "displayName": "HTTP Theben Luxor Accessory",
+  "name": "homebridge-theben-accessory",
   "version": "1.3.0",
   "description": "http plugin for homebridge: https://github.com/nfarina/homebridge",
   "license": "ISC",
@@ -14,7 +14,7 @@
   "author": "tasict",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/staromeste/homebridge-http-advanced-accessory"
+    "url": "git+https://github.com/mw-aiesec/homebridge-theben-accessory"
   },
   "dependencies": {
     "JSONPath": "^0.11.2",
