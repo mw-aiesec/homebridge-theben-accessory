@@ -127,28 +127,52 @@ HttpAdvancedAccessory.prototype = {
  * @param callback Callback method to call with the result or error (error, response, body)
  */
 	httpRequest : function(url, body, httpMethod, callback) {
+
+
+function tokenRequest() {
+			return new Promise(function(resolve){
+				var options = {
+				'method': 'GET',
+				'url': 'http://localhost/theben_token.json',
+				
+			};
+			 request(options, function (error, response, body) {
+				if (error) throw new Error(error);
+				resolve(body);
+			});
+
+		});
+			}
+
+		tokenRequest().then(function(token) {
+
 		setTimeout(
-			function(){request({
-				url: url,
-				body: body,
-				method: httpMethod,
-				auth: {
-					user: this.auth.username,
-					pass: this.auth.password,
-					sendImmediately: this.auth.immediately
-				},
-				headers: {
-					Authorization: "Basic " + new Buffer(this.auth.username + ":" + this.auth.password).toString("base64")
-				}
-			},
-			function(error, response, body) {
-				this.uriCalls--;
-				this.debugLog("httpRequest ended, current uriCalls is " + this.uriCalls);
-				callback(error, response, body)
-			}.bind(this))}.bind(this), this.uriCalls * this.uriCallsDelay);
-		
+			function(){
+
+				this.debugLog(token)
+			return request({
+			url: url,
+			body: body,
+			method: httpMethod,
+			rejectUnauthorized: false,
+
+			headers: {
+				Authorization: "Token token=" + token //e9e19830951552a80d043cae9f13983f" //secondRequest()
+			}
+		},
+		function(error, response, body) {
+			this.uriCalls--;
+			this.debugLog("httpRequest ended, current uriCalls is " + this.uriCalls);
+			callback(error, response, body)
+		}.bind(this));
+
+				}.bind(this), this.uriCalls * this.uriCallsDelay);
+			}.bind(this)); // close promise
+
+
 		this.uriCalls++;
-		this.debugLog("httpRequest called, current uriCalls is " + this.uriCalls); 
+		this.uriCallsDelay=0;
+		this.debugLog("httpRequest called, current uriCalls is " + this.uriCalls);
 	},
 
 /**
@@ -176,24 +200,24 @@ HttpAdvancedAccessory.prototype = {
 
 	stringInject : function(str, data) {
 		if (typeof str === 'string' && (data instanceof Array)) {
-	
+
 			return str.replace(/({\d})/g, function(i) {
 				return data[i.replace(/{/, '').replace(/}/, '')];
 			});
 		} else if (typeof str === 'string' && (data instanceof Object)) {
-	
+
 			for (let key in data) {
 				return str.replace(/({([^}]+)})/g, function(i) {
 					let key = i.replace(/{/, '').replace(/}/, '');
 					if (!data[key]) {
 						return i;
 					}
-	
+
 					return data[key];
 				});
 			}
 		} else {
-	
+
 			return false;
 		}
 	},
@@ -208,12 +232,11 @@ HttpAdvancedAccessory.prototype = {
 		var error = null;
 		callback(error, this.name);
 	},
-	
+
 	getServices: function () {
 		var getDispatch = function (callback, action) {
-			if (typeof action == "undefined") {
+			if (!action) {
 				callback(null);
-				return;
 			}
 			this.debugLog("getDispatch function called for url: %s", action.url);
 			this.httpRequest(action.url, action.body, action.httpMethod, function(error, response, responseBody) {
@@ -227,15 +250,10 @@ HttpAdvancedAccessory.prototype = {
 					this.debugLog("received response from action: %s", action.url);
 					var state = responseBody;
 					state = this.applyMappers(action.mappers,state);
-					if (state == "inconclusive") {
-					   this.log(`Inconclusive mapping of response "${responseBody}"`);
-					   if (action.inconclusive){
-					     this.debugLog("Response inconclusive and trying the action specified for this condition.");
-					     getDispatch(callback,action.inconclusive);
-					   } else {
-					     this.debugLog("Response inconclusive with no further action specified for this condition.");
-					     }
-					} else {
+					if(state == "inconclusive" && action.inconclusive){
+						this.debugLog("response inconclusive, try again.");
+						getDispatch(callback,action.inconclusive);
+					}else{
 						this.debugLog("We have a value: %s, int: %d", state, parseInt(state));
 						callback(null, state);
 					}
@@ -248,7 +266,7 @@ HttpAdvancedAccessory.prototype = {
 			if (this.enableSet == false) { callback() }
 			else {
 				var actionName = "set" + characteristic.displayName.replace(/\s/g, '')
-				this.debugLog("setDispatch:actionName:value: ", actionName, value); 
+				this.debugLog("setDispatch:actionName:value: ", actionName, value);
 				var action = this.urls[actionName];
 				if (!action || !action.url) {
 					callback(null);
@@ -271,8 +289,8 @@ HttpAdvancedAccessory.prototype = {
 							callback(error);
 						} else {
 							// https://github.com/KhaosT/HAP-NodeJS/blob/master/lib/Characteristic.js#L34 setter callback takes only error as arg
-							callback(); 
-						}	
+							callback();
+						}
 					}
 				}.bind(this));
 
@@ -287,36 +305,86 @@ HttpAdvancedAccessory.prototype = {
 			.setCharacteristic(Characteristic.Model, "HTTP Accessory Model")
 			.setCharacteristic(Characteristic.SerialNumber, "HTTP Accessory Serial Number");
 
-		
-		var newService = new Service[this.service](this.name);
+		var newService = null
+		switch (this.service) {
+			case "AccessoryInformation": newService = new Service.AccessoryInformation(this.name); break;
+			case "AirPurifier": newService = new Service.AirPurifier(this.name); break;
+			case "AirQualitySensor": newService = new Service.AirQualitySensor(this.name); break;
+			case "BatteryService": newService = new Service.BatteryService(this.name); break;
+			case "BridgeConfiguration": newService = new Service.BridgeConfiguration(this.name); break;
+			case "BridgingState": newService = new Service.BridgingState(this.name); break;
+			case "CameraControl": newService = new Service.CameraControl(this.name); break;
+			case "CameraRTPStreamManagement": newService = new Service.CameraRTPStreamManagement(this.name); break;
+			case "CarbonDioxideSensor": newService = new Service.CarbonDioxideSensor(this.name); break;
+			case "CarbonMonoxideSensor": newService = new Service.CarbonMonoxideSensor(this.name); break;
+			case "ContactSensor": newService = new Service.ContactSensor(this.name); break;
+			case "Door": newService = new Service.Door(this.name); break;
+			case "Doorbell": newService = new Service.Doorbell(this.name); break;
+			case "Fan": newService = new Service.Fan(this.name); break;
+			case "Fanv2": newService = new Service.Fanv2(this.name); break;
+			case "FilterMaintenance": newService = new Service.FilterMaintenance(this.name); break;
+			case "Faucet": newService = new Service.Faucet(this.name); break;
+			case "GarageDoorOpener": newService = new Service.GarageDoorOpener(this.name); break;
+			case "HeaterCooler": newService = new Service.HeaterCooler(this.name); break;
+			case "HumidifierDehumidifier": newService = new Service.HumidifierDehumidifier(this.name); break;
+			case "HumiditySensor": newService = new Service.HumiditySensor(this.name); break;
+			case "IrrigationSystem": newService = new Service.IrrigationSystem(this.name); break;
+			case "LeakSensor": newService = new Service.LeakSensor(this.name); break;
+			case "LightSensor": newService = new Service.LightSensor(this.name); break;
+			case "Lightbulb": newService = new Service.Lightbulb(this.name); break;
+			case "LockManagement": newService = new Service.LockManagement(this.name); break;
+			case "LockMechanism": newService = new Service.LockMechanism(this.name); break;
+			case "Microphone": newService = new Service.Microphone(this.name); break;
+			case "MotionSensor": newService = new Service.MotionSensor(this.name); break;
+			case "OccupancySensor": newService = new Service.OccupancySensor(this.name); break;
+			case "Outlet": newService = new Service.Outlet(this.name); break;
+			case "Pairing": newService = new Service.Pairing(this.name); break;
+			case "ProtocolInformation": newService = new Service.ProtocolInformation(this.name); break;
+			case "Relay": newService = new Service.Relay(this.name); break;
+			case "SecuritySystem": newService = new Service.SecuritySystem(this.name); break;
+			case "SecuritySystem": newService = new Service.SecuritySystem(this.name); break;
+			case "Slat": newService = new Service.Slat(this.name); break;
+			case "Speaker": newService = new Service.Speaker(this.name); break;
+			case "StatefulProgrammableSwitch": newService = new Service.StatefulProgrammableSwitch(this.name); break;
+			case "StatelessProgrammableSwitch": newService = new Service.StatelessProgrammableSwitch(this.name); break;
+			case "Switch": newService = new Service.Switch(this.name); break;
+			case "TemperatureSensor": newService = new Service.TemperatureSensor(this.name); break;
+			case "Thermostat": newService = new Service.Thermostat(this.name); break;
+			case "TimeInformation": newService = new Service.TimeInformation(this.name); break;
+			case "TunneledBTLEAccessoryService": newService = new Service.TunneledBTLEAccessoryService(this.name); break;
+			case "Valve": newService = new Service.Valve(this.name); break;
+			case "Window": newService = new Service.Window(this.name); break;
+			case "WindowCovering": newService = new Service.WindowCovering(this.name); break;
+			default: newService = null
+		}
 
 		var counters = [];
 		var optionCounters = [];
 
 
-		for (var characteristicIndex in newService.characteristics) 
+		for (var characteristicIndex in newService.characteristics)
 		{
 			var characteristic = newService.characteristics[characteristicIndex];
 			var compactName = characteristic.displayName.replace(/\s/g, '');
-			
+
 			if (compactName in this.props) {
 				characteristic.setProps(this.props[compactName]);
 			}
-			
+
 			counters[characteristicIndex] = makeHelper(characteristic);
 			characteristic.on('get', counters[characteristicIndex].getter.bind(this))
 			characteristic.on('set', counters[characteristicIndex].setter.bind(this));
 		}
 
-		for (var characteristicIndex in newService.optionalCharacteristics) 
+		for (var characteristicIndex in newService.optionalCharacteristics)
 		{
 			var characteristic = newService.optionalCharacteristics[characteristicIndex];
 			var compactName = characteristic.displayName.replace(/\s/g, '');
-			
+
 			if (compactName in this.props) {
 				characteristic.setProps(this.props[compactName]);
 			}
-			
+
 			if(this.optionCharacteristic.indexOf(compactName) == -1)
 			{
 				continue;
@@ -328,18 +396,14 @@ HttpAdvancedAccessory.prototype = {
 
 			newService.addCharacteristic(characteristic);
 		}
-	
+
 		function makeHelper(characteristic) {
 			var timeoutID = null;
 			return {
 				getter: function (callback) {
 					var actionName = "get" + characteristic.displayName.replace(/\s/g, '');
-					if(actionName == "getName"){
-						callback (null, this.name);
-						return;
-					}
 					var action = this.urls[actionName];
-					if (this.forceRefreshDelay == 0 ) { 
+					if (this.forceRefreshDelay == 0 ) {
 						getDispatch(function(error,data){
 							this.debugLog(actionName + " getter function returned with data: " + data);
 							this.enableSet = false;
@@ -347,33 +411,32 @@ HttpAdvancedAccessory.prototype = {
 							characteristic.setValue(data);
 							this.enableSet = true;
 							callback(error,data);
-						}.bind(this), action); 
-					} 
+						}.bind(this), action);
+					}
 					else {
-						
-						callback(null,this.state[actionName] || characteristic.value);
 
 						if (typeof this.statusEmitters[actionName] != "undefined"){
 							this.debugLog(actionName + " returning cached data: " + this.state[actionName]);
+							callback(null,this.state[actionName]);
 							return;
-						} 
+						}
 						this.debugLog("creating new emitter for " + actionName);
 
 						this.statusEmitters[actionName] = pollingtoevent(function (done) {
 							this.debugLog("requested update for action " + actionName);
 							getDispatch(done,action);
 
-						}.bind(this), { 
-							longpolling: true, 
-							interval: this.forceRefreshDelay * 1000, 
-							longpollEventName: actionName 
+						}.bind(this), {
+							longpolling: true,
+							interval: this.forceRefreshDelay * 1000,
+							longpollEventName: actionName
 						});
 
-						this.statusEmitters[actionName].on(actionName, function (data) 
+						this.statusEmitters[actionName].on(actionName, function (data)
 						{
 							this.debugLog(actionName + " emitter returned data: " + data);
 							this.enableSet = false;
-							
+
 							if (['int', 'uint16', 'uint8', 'uint32', 'uint64'].includes(characteristic.props.format))
 								data = parseInt(data);
 							if ('float' == characteristic.props.format)
@@ -383,17 +446,23 @@ HttpAdvancedAccessory.prototype = {
 							characteristic.setValue(data);
 							this.enableSet = true;
 
+							if(callback){
+								this.debugLog("calling callback for action " + actionName);
+								callback(null, this.state[actionName]);
+							}
+							// just call it once, multiple calls not allowed
+							callback = null;
 						}.bind(this));
 
 						this.statusEmitters[actionName].on("error", function(err, data) {
 							this.log("Emitter errored: %s. with data %j", err, data);
 						}.bind(this));
-						
+
 					}
 				},
-				setter: function (value, callback) { 
+				setter: function (value, callback) {
 					if (this.enableSet == false || this.setterDelay === 0) {
-						// no setter delay or internal set - do it immediately 
+						// no setter delay or internal set - do it immediately
 						this.debugLog("updating " + characteristic.displayName.replace(/\s/g, '') + " with value " + value);
 						setDispatch(value, callback, characteristic);
 					} else {
@@ -401,14 +470,14 @@ HttpAdvancedAccessory.prototype = {
 						// optimistic callback calling if we have a delay
 						// this also means we won't be getting back any errors in homekit
 						callback();
-						
+
 						this.debugLog("updating " + characteristic.displayName.replace(/\s/g, '') + " with value " + value + " in " + this.setterDelay + "ms");
 						if(timeoutID != null) {
-							clearTimeout(timeoutID); 
+							clearTimeout(timeoutID);
 							this.debugLog("clearing timeout for setter " + characteristic.displayName.replace(/\s/g, ''));
 						}
 						timeoutID = setTimeout(function(){setDispatch(value, null, characteristic);timeoutID=null;}.bind(this), this.setterDelay);
-					}	
+					}
 				}
 			};
 		}
